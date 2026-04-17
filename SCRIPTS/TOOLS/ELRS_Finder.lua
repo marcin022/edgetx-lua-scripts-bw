@@ -9,7 +9,7 @@ local initDone = false
 
 -- reset telemetry on init
 local function init_func()
-  -- Reset wszystkich slotów sensorów (EdgeTX ma max 60 slotów)
+  -- Reset all sensors 
   for i = 0, 59 do
     local sensor = model.getSensor(i)
     if sensor ~= nil then
