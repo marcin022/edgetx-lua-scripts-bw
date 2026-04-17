@@ -1,40 +1,52 @@
--- finder.lua  (EdgeTX/Boxer B/W friendly)
+-- ELRS_Finder.lua (EdgeTX/Boxer B/W friendly)
 -- ELRS/CRSF RSSI-based lost model finder (Geiger style)
+-- Auto-discovers telemetry sensors on startup
+
 local lastBeep = 0
 local avg = -120
 local have = { rssi=false, snr=false, rql=false }
+local initDone = false
+
+-- reset telemetry on init
+local function init_func()
+  -- Reset wszystkich slotów sensorów (EdgeTX ma max 60 slotów)
+  for i = 0, 59 do
+    local sensor = model.getSensor(i)
+    if sensor ~= nil then
+      model.resetSensor(i)
+    end
+  end
+  initDone = true
+end
 
 local function readSignal()
-  -- Prefer 1RSS (CRSF dBm), else RSNR (dB), else RQly (%)
-  local rssi = getValue("1RSS")  -- typically negative dBm, eg -95..-40
+  local rssi = getValue("1RSS")
   if rssi and rssi ~= 0 then have.rssi=true; return rssi, "dBm" end
-  local snr = getValue("RSNR")   -- -20..+20 dB typical
+  local snr = getValue("RSNR")
   if snr and snr ~= 0 then have.snr=true; return (snr*2-120), "SNR" end
-  local rql = getValue("RQly")   -- 0..100 %
+  local rql = getValue("RQly")
   if rql and rql ~= 0 then have.rql=true; return (rql-120), "LQ" end
   return -120, "NA"
 end
 
-local function clamp(x,a,b) if x<a then return a elseif x>b then return b else return x end end
+local function clamp(x,a,b)
+  if x<a then return a elseif x>b then return b else return x end
+end
 
 local function run_func(event)
-  local now = getTime() -- 10ms ticks
+  local now = getTime()
   local raw, kind = readSignal()
-  -- Exponential moving average for stability
+
   avg = 0.8*avg + 0.2*(raw)
+  local strength = clamp( (avg + 110) * (100/(70)), 0, 100 )
+  local period = clamp( 120 - strength, 10, 120 )
 
-  -- Map avg (~-110..-40) to 0..100 “strength”
-  local strength = clamp( (avg + 110) * (100/(70)), 0, 100 )  -- -110→0, -40→100
-
-  -- Beep cadence: stronger ⇒ shorter interval
-  local period = clamp( 120 - strength, 10, 120 )  -- ticks (10ms each): 120→1.2s, 10→0.1s
   if now - lastBeep >= period then
-    local freq = 600 + (strength*6)                -- 600..1200 Hz
+    local freq = 600 + (strength*6)
     playTone(freq, 30, 0, 0)
     lastBeep = now
   end
 
-  -- UI
   lcd.clear()
   lcd.drawText(2,2,"ELRS Finder", MIDSIZE)
   lcd.drawText(2,18,string.format("Src:%s", kind), 0)
@@ -48,4 +60,4 @@ local function run_func(event)
   return 0
 end
 
-return { run=run_func }
+return { init=init_func, run=run_func }
